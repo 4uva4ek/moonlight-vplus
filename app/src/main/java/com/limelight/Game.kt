@@ -107,6 +107,8 @@ import android.view.View.OnGenericMotionListener
 import android.view.View.OnSystemUiVisibilityChangeListener
 import android.view.View.OnTouchListener
 import android.view.Window
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.view.inputmethod.InputMethodManager
@@ -188,15 +190,14 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
     private var usbForwardingCreationPending = false
 
 
-    @SuppressLint("NewApi") // CompletableFuture is supplied on API 22/23 by desugaring.
     fun showUsbForwarding(onShown: ((android.app.Dialog) -> Unit)? = null) {
         if (!connected) return
         if (usbForwarding == null) {
             val previousCleanup = UsbForwardingController.previousCleanup()
-            if (!previousCleanup.isDone || previousCleanup.isCompletedExceptionally) {
+            if (!previousCleanup.isDone || previousCleanup.isFailed) {
                 if (!usbForwardingCreationPending) {
                     usbForwardingCreationPending = true
-                    previousCleanup.whenComplete { _, error ->
+                    previousCleanup.whenComplete { error ->
                         runOnUiThread {
                             usbForwardingCreationPending = false
                             if (!isDestroyed && connected) {
@@ -280,6 +281,8 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
     private var framegenInputHdrEnabled = false
     /** Final HDR decision after display and decoder capability negotiation. */
     private var negotiatedHdrEnabled = false
+    internal var authoredPcmHapticsRequested = false
+        private set
     private var framegenEnabledToastShown = false
     private var reportedCrash = false
 
@@ -516,6 +519,13 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
 
         audioVibrationService = AudioVibrationService(this)
         audioVibrationService?.controllerHandler = controllerHandler
+        bindAudioHapticsTouchArbitration()
+        audioVibrationService?.detachSystemAudioHaptics = {
+            audioRenderer?.detachSystemAudioHaptics() == true
+        }
+        audioVibrationService?.attachSystemAudioHaptics = {
+            audioRenderer?.attachSystemAudioHaptics() == true
+        }
         audioVibrationService?.setSettings(
             prefConfig.enableAudioVibration,
             prefConfig.audioVibrationStrength,
@@ -1075,8 +1085,17 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
 
         val waveformController = UsbWaveformBackends.hasEligibleController(
             getSystemService(USB_SERVICE) as? UsbManager,
-            prefConfig.allowExperimentalHaptics)
-        val hostGamepad = prefConfig.hostGamepadSelection.resolve(prefConfig.screenDs5Touchpad, waveformController)
+            prefConfig.allowExperimentalHaptics, sensaEnabled = prefConfig.sensaHapticsEnabled)
+        // Sensa can render ordinary rumble and does not require DS5 emulation.
+        // Still negotiate authored PCM separately when the chosen host supports it.
+        val authoredOnlyController = UsbWaveformBackends.hasEligibleController(
+            getSystemService(USB_SERVICE) as? UsbManager,
+            prefConfig.allowExperimentalHaptics, includeRumbleConversion = false)
+        val hostGamepad = prefConfig.hostGamepadSelection.resolve(prefConfig.screenDs5Touchpad, authoredOnlyController)
+        if (BuildConfig.DEBUG) LimeLog.info("Haptic negotiation: selection=${prefConfig.hostGamepadSelection} " +
+            "hostGamepad=$hostGamepad waveform=$waveformController " +
+            "authored=${prefConfig.hostGamepadSelection.requestsAuthoredPcm(waveformController,
+                prefConfig.gameRumbleMode != com.limelight.binding.input.haptics.GameRumbleMode.DEVICE)}")
         val config = StreamConfiguration.Builder()
             .setResolution(prefConfig.width, prefConfig.height)
             .setLaunchRefreshRate(prefConfig.fps)
@@ -1160,6 +1179,7 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
                 "protocolHdrMode=${config.hdrMode} fullRange=${prefConfig.fullRange}"
         )
 
+        authoredPcmHapticsRequested = config.authoredPcmHaptics
         return StreamConfigResult(config, displayRefreshRate, clientRefreshRateX100)
     }
 
@@ -1170,6 +1190,7 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
     )
 
     private fun prepareConnection() {
+        audioVibrationService?.stop()
         cursorServiceManager.destroyLocalCursorRenderers()
         runOnUiThread {
             val cursorOverlay = findViewById<CursorView>(R.id.cursorOverlay)
@@ -1198,6 +1219,7 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
         performanceOverlayManager?.recordStreamStart()
 
         audioVibrationService?.controllerHandler = controllerHandler
+        bindAudioHapticsTouchArbitration()
 
         if (prefConfig.usbDriver || prefConfig.dualSenseWirelessBridge || packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_USB_HOST)) {
             bindUsbDriverService()
@@ -1243,6 +1265,7 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
         }
         if (audioVibrationService != null) {
             updateAudioHapticsRuntimeEnabled(true)
+            if (connected) audioVibrationService?.resumeAfterForeground()
         }
         KeyboardAccessibilityService.setIntercepting(true)
         val service = KeyboardAccessibilityService.instance
@@ -1635,6 +1658,19 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
         MoonBridge.setAudioHapticsOutputEnabled(featureEnabled)
     }
 
+    private fun bindAudioHapticsTouchArbitration() {
+        val service = audioVibrationService ?: return
+        if (!::controllerHandler.isInitialized) return
+        controllerHandler.setDeviceTouchAudioCallbacks(
+            onPreemptRequested = service::preemptDeviceOutputForTouch,
+            onFinished = service::resumeDeviceOutputAfterTouch,
+        )
+    }
+
+    internal fun stopAudioHapticsForStream() {
+        audioVibrationService?.stop()
+    }
+
     /**
      * Applies Game Menu audio-haptics changes to the active stream.
      *
@@ -1672,6 +1708,18 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
             scene = prefConfig.audioVibrationScene
         )
     }
+
+    internal fun setSensaHapticsEnabled(enabled: Boolean) {
+        prefConfig.sensaHapticsEnabled = enabled
+        prefConfig.showHapticVibrationCard = true
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(this).edit()
+            .putBoolean(com.limelight.preferences.SensaStrengthPreferences.ENABLED_KEY, enabled)
+            .putBoolean("checkbox_show_haptic_vibration_card", true).apply()
+        if (!enabled) controllerHandler.cancelWaveformTests()
+        usbDriverServiceManager?.updateSensaHaptics(enabled)
+    }
+
+    internal fun appliedSensaHaptics(): Boolean? = usbDriverServiceManager?.appliedSensaHaptics()
 
     internal fun applyAudioHapticsStrength(strength: Int): Boolean {
         val service = audioVibrationService ?: return false
@@ -1926,9 +1974,22 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
 
     override fun toggleKeyboard() {
         LimeLog.info("Toggling keyboard overlay")
-        streamView.clearFocus()
         val inputManager = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-        inputManager.toggleSoftInput(0, 0)
+        val imeVisible = ViewCompat.getRootWindowInsets(streamView)
+            ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        if (imeVisible) {
+            inputManager.hideSoftInputFromWindow(streamView.windowToken, 0)
+            return
+        }
+
+        streamView.setTextInputEnabled(true)
+        streamView.isFocusableInTouchMode = true
+        streamView.requestFocus()
+        streamView.post {
+            if (!isFinishing && !isDestroyed) {
+                inputManager.showSoftInput(streamView, InputMethodManager.SHOW_IMPLICIT)
+            }
+        }
     }
 
     override fun onRemoteTextContext(context: RemoteTextContext) {
@@ -2366,7 +2427,13 @@ class Game : ThemedComponentActivity(), SurfaceHolder.Callback,
         controllerHandler.handleSetControllerLED(controllerNumber, r, g, b)
     }
 
+    private var lastHapticPcmLogMs = 0L
     override fun ds5HapticsPcm(frame: Ds5HapticsPcmFrame) {
+        if (BuildConfig.DEBUG && android.os.SystemClock.elapsedRealtime() - lastHapticPcmLogMs >= 1000) {
+            lastHapticPcmLogMs = android.os.SystemClock.elapsedRealtime()
+            LimeLog.info("Haptic PCM received: player=${frame.controllerNumber} rate=${frame.sampleRate} " +
+                "frames=${frame.frameCount} flags=${frame.flags} nonzero=${frame.pcm.any { it != 0.toByte() }}")
+        }
         controllerHandler.handleDs5HapticsPcm(frame)
     }
 

@@ -28,9 +28,11 @@ internal data class GameMenuComposeUiState(
     val visibleCards: GameMenuVisibleCards,
     val bitrate: BitrateCardState,
     val audioHaptics: AudioHapticsCardState,
+    val waveformHaptics: WaveformHapticsCardState,
     val gyro: GyroCardState,
     val touchPointerSensitivity: TouchPointerSensitivityState,
     val customKeys: List<CustomKeyData>,
+    val sensaHaptics: SensaHapticsCardState = SensaHapticsCardState(),
     val quickEditMode: Boolean = false,
     val usbForwardingEnabled: Boolean = false,
     val isSubmenu: Boolean = false,
@@ -83,7 +85,9 @@ internal data class GameMenuVisibleCards(
     val bitrate: Boolean,
     val audioHaptics: Boolean,
     val gyro: Boolean,
-    val shortcuts: Boolean
+    val shortcuts: Boolean,
+    val waveformHaptics: Boolean = true,
+    val hapticVibration: Boolean = false
 )
 
 internal data class GameMenuCallbacks(
@@ -126,5 +130,9 @@ internal data class GameMenuCallbacks(
     val onApplyTouchPointerSensitivityPreset: (String) -> Unit,
     val onManageTouchPointerSensitivityPresets: () -> Unit,
     val onCustomKey: (CustomKeyData) -> Unit,
-    val onWaveformTest: (Int, Boolean) -> Unit = { _, _ -> }
+    val onWaveformTest: (Int, Boolean) -> Unit = { _, _ -> },
+    val onSensaHapticsMode: (String) -> Unit = {},
+    val onSensaHapticsStrength: (Float) -> Unit = {},
+    val onSensaHapticsFrequency: (Float) -> Unit = {},
+    val onSensaHapticsEnabled: (Boolean) -> Unit = {}
 )

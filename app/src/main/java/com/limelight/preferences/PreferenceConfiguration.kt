@@ -122,6 +122,7 @@ class PreferenceConfiguration {
     var combineJoyCons = true
     var usbDriver = false
     var allowExperimentalHaptics = false
+    var sensaHapticsEnabled = false
     var hostGamepadSelection = HostGamepadSelection.AUTOMATIC
     var dualSenseWirelessBridge = false
     var dualSenseDirectBluetooth = false
@@ -214,6 +215,8 @@ class PreferenceConfiguration {
     // Card visibility
     var showBitrateCard = false
     var showAudioHapticsCard = false
+    var showWaveformHapticsCard = true
+    var showHapticVibrationCard = false
     var showGyroCard = false
     var showQuickKeyCard = false
 
@@ -222,6 +225,7 @@ class PreferenceConfiguration {
     var micBitrate = 0
     var micIconColor: String = ""
     var micMenuActionMode: String = MIC_MENU_ACTION_SHOW_BUTTON
+    var micInitialState: String = MicrophoneInitialState.OFF.preferenceValue
 
     // 麦克风音量增益及其平衡设置
     var micVolumeProcessingEnabled = false // 音量增益及其平衡总开关
@@ -316,6 +320,8 @@ class PreferenceConfiguration {
                 .putBoolean(ROTABLE_SCREEN_PREF_STRING, rotableScreen)
                 .putBoolean(SHOW_BITRATE_CARD_PREF_STRING, showBitrateCard)
                 .putBoolean(SHOW_AUDIO_HAPTICS_CARD_PREF_STRING, showAudioHapticsCard)
+                .putBoolean(SHOW_WAVEFORM_HAPTICS_CARD_PREF_STRING, showWaveformHapticsCard)
+                .putBoolean(SHOW_HAPTIC_VIBRATION_CARD_PREF_STRING, showHapticVibrationCard)
                 .putBoolean(SHOW_GYRO_CARD_PREF_STRING, showGyroCard)
                 .putBoolean(SHOW_QuickKeyCard, showQuickKeyCard)
                 .putBoolean(AUDIO_VIBRATION_ENABLE_PREF_STRING, enableAudioVibration)
@@ -330,6 +336,7 @@ class PreferenceConfiguration {
                 .putInt(MIC_BITRATE_PREF_STRING, micBitrate)
                 .putString(MIC_ICON_COLOR_PREF_STRING, micIconColor)
                 .putString(MIC_MENU_ACTION_MODE_PREF_STRING, micMenuActionMode)
+                .putString(MIC_INITIAL_STATE_PREF_STRING, micInitialState)
                 .putString(
                     MIC_VOLUME_PROCESSING_MODE_PREF_STRING,
                     MicVolumeProcessingPolicy.modeFor(
@@ -497,6 +504,7 @@ class PreferenceConfiguration {
         copy.micBitrate = this.micBitrate
         copy.micIconColor = this.micIconColor
         copy.micMenuActionMode = this.micMenuActionMode
+        copy.micInitialState = this.micInitialState
         copy.micVolumeProcessingEnabled = this.micVolumeProcessingEnabled
         copy.micGainEnabled = this.micGainEnabled
         copy.micGainDb = this.micGainDb
@@ -524,6 +532,8 @@ class PreferenceConfiguration {
         copy.audioVibrationScene = this.audioVibrationScene
         copy.showBitrateCard = this.showBitrateCard
         copy.showAudioHapticsCard = this.showAudioHapticsCard
+        copy.showWaveformHapticsCard = this.showWaveformHapticsCard
+        copy.showHapticVibrationCard = this.showHapticVibrationCard
         copy.showGyroCard = this.showGyroCard
         copy.showQuickKeyCard = this.showQuickKeyCard
         return copy
@@ -601,6 +611,8 @@ class PreferenceConfiguration {
         // Card visibility preferences
         private const val SHOW_BITRATE_CARD_PREF_STRING = "checkbox_show_bitrate_card"
         private const val SHOW_AUDIO_HAPTICS_CARD_PREF_STRING = "checkbox_show_audio_haptics_card"
+        private const val SHOW_WAVEFORM_HAPTICS_CARD_PREF_STRING = "checkbox_show_waveform_haptics_card"
+        private const val SHOW_HAPTIC_VIBRATION_CARD_PREF_STRING = "checkbox_show_haptic_vibration_card"
         private const val SHOW_GYRO_CARD_PREF_STRING = "checkbox_show_gyro_card"
         @Suppress("ConstPropertyName")
         private const val SHOW_QuickKeyCard = "checkbox_show_QuickKeyCard"
@@ -640,6 +652,7 @@ class PreferenceConfiguration {
         private const val MIC_BITRATE_PREF_STRING = "seekbar_mic_bitrate_kbps"
         private const val MIC_ICON_COLOR_PREF_STRING = "list_mic_icon_color"
         const val MIC_MENU_ACTION_MODE_PREF_STRING = "list_mic_menu_action_mode"
+        const val MIC_INITIAL_STATE_PREF_STRING = "list_mic_initial_state"
 
         // 麦克风音量增益及其平衡设置
         const val MIC_VOLUME_PROCESSING_MODE_PREF_STRING = "list_mic_volume_processing_mode"
@@ -837,6 +850,7 @@ class PreferenceConfiguration {
         const val MIC_MENU_ACTION_SHOW_BUTTON = "show_button"
         const val MIC_MENU_ACTION_TOGGLE_MIC = "toggle_microphone"
         private const val DEFAULT_MIC_MENU_ACTION_MODE = MIC_MENU_ACTION_SHOW_BUTTON
+        private val DEFAULT_MIC_INITIAL_STATE = MicrophoneInitialState.OFF.preferenceValue
 
         // 麦克风音量增益及其平衡默认值
         private const val DEFAULT_MIC_GAIN_DB = 0
@@ -1389,6 +1403,7 @@ class PreferenceConfiguration {
             config.multiController = prefs.getBoolean(MULTI_CONTROLLER_PREF_STRING, DEFAULT_MULTI_CONTROLLER)
             config.combineJoyCons = prefs.getBoolean("checkbox_combine_joycons", true)
             config.usbDriver = prefs.getBoolean(USB_DRIVER_PREF_SRING, DEFAULT_USB_DRIVER)
+            config.sensaHapticsEnabled = SensaStrengthPreferences.enabled(context)
             config.allowExperimentalHaptics = prefs.getBoolean("checkbox_experimental_haptic_protocols", false)
             config.hostGamepadSelection = HostGamepadSelection.fromPreference(
                 prefs.getString("list_host_gamepad_selection", "automatic"))
@@ -1522,6 +1537,10 @@ class PreferenceConfiguration {
 
             // Cards visibility (defaults to true)
             config.showBitrateCard = prefs.getBoolean(SHOW_BITRATE_CARD_PREF_STRING, true)
+            // Sensa visibility is unrelated to other waveform devices.
+            config.showWaveformHapticsCard = prefs.getBoolean(SHOW_WAVEFORM_HAPTICS_CARD_PREF_STRING, true)
+            config.showHapticVibrationCard = prefs.getBoolean(SHOW_HAPTIC_VIBRATION_CARD_PREF_STRING,
+                config.sensaHapticsEnabled)
             config.showAudioHapticsCard = prefs.getBoolean(
                 SHOW_AUDIO_HAPTICS_CARD_PREF_STRING,
                 config.enableAudioVibration
@@ -1536,6 +1555,9 @@ class PreferenceConfiguration {
             config.micBitrate = prefs.getInt(MIC_BITRATE_PREF_STRING, DEFAULT_MIC_BITRATE)
             config.micIconColor = prefs.getString(MIC_ICON_COLOR_PREF_STRING, DEFAULT_MIC_ICON_COLOR) ?: DEFAULT_MIC_ICON_COLOR
             config.micMenuActionMode = prefs.getString(MIC_MENU_ACTION_MODE_PREF_STRING, DEFAULT_MIC_MENU_ACTION_MODE) ?: DEFAULT_MIC_MENU_ACTION_MODE
+            config.micInitialState = MicrophoneInitialState.fromPreferenceValue(
+                prefs.getString(MIC_INITIAL_STATE_PREF_STRING, DEFAULT_MIC_INITIAL_STATE)
+            ).preferenceValue
 
             // Legacy flags remain authoritative so importing an old backup can override a
             // previously stored mode value. The settings UI keeps both representations synced.

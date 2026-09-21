@@ -248,7 +248,9 @@ class GameMenu(
     )
     private val actionExecutor = StreamActionExecutor(game, { conn }, handler)
     private val bitrateCardController = BitrateCardController(game, conn)
+    private val sensaHapticsCardController = SensaHapticsCardController(game)
     private val audioHapticsCardController = AudioHapticsCardController(game)
+    private val waveformHapticsCardController = WaveformHapticsCardController(game)
     private val gyroCardController = GyroCardController(game)
     private val touchPointerSensitivityController = TouchPointerSensitivityController(game)
     private val renderingProfile = GameMenuRenderingProfile.from(game)
@@ -1132,6 +1134,8 @@ class GameMenu(
                 visibleCards = readVisibleCards(),
                 bitrate = bitrateCardController.snapshot(),
                 audioHaptics = audioHapticsCardController.snapshot(),
+                sensaHaptics = sensaHapticsCardController.snapshot(),
+                waveformHaptics = waveformHapticsCardController.snapshot(),
                 gyro = gyroCardController.snapshot(),
                 touchPointerSensitivity = touchPointerSensitivityController.snapshot(),
                 customKeys = getSavedCustomKeys(),
@@ -1146,8 +1150,14 @@ class GameMenu(
         bitrateCardController.start { bitrate ->
             composeUiState?.let { it.value = it.value.copy(bitrate = bitrate) }
         }
+        sensaHapticsCardController.start(visible = game.prefConfig.showHapticVibrationCard) { sensaHaptics ->
+            composeUiState?.let { it.value = it.value.copy(sensaHaptics = sensaHaptics) }
+        }
         audioHapticsCardController.start { audioHaptics ->
             composeUiState?.let { it.value = it.value.copy(audioHaptics = audioHaptics) }
+        }
+        waveformHapticsCardController.start { waveformHaptics ->
+            composeUiState?.let { it.value = it.value.copy(waveformHaptics = waveformHaptics) }
         }
         gyroCardController.start { gyro ->
             composeUiState?.let { it.value = it.value.copy(gyro = gyro) }
@@ -1187,7 +1197,11 @@ class GameMenu(
             onAudioHapticsMode = audioHapticsCardController::setMode,
             onAudioHapticsScene = audioHapticsCardController::setScene,
             onAudioHapticsReset = audioHapticsCardController::resetTuning,
-            onWaveformTest = audioHapticsCardController::toggleWaveformTest,
+            onWaveformTest = waveformHapticsCardController::toggleWaveformTest,
+            onSensaHapticsMode = sensaHapticsCardController::setMode,
+            onSensaHapticsStrength = sensaHapticsCardController::setStrength,
+            onSensaHapticsFrequency = sensaHapticsCardController::setFrequency,
+            onSensaHapticsEnabled = sensaHapticsCardController::setEnabled,
             onGyroEnabled = gyroCardController::setEnabled,
             onGyroMouseMode = gyroCardController::setMouseMode,
             onGyroActivationKey = {
@@ -1305,7 +1319,9 @@ class GameMenu(
             this.composeUiState = null
             guideDismissController.clear()
             bitrateCardController.dispose()
+            sensaHapticsCardController.dispose()
             audioHapticsCardController.dispose()
+            waveformHapticsCardController.dispose()
             gyroCardController.dispose()
             touchPointerSensitivityController.dispose()
             menuStack.clear()
@@ -1391,7 +1407,9 @@ class GameMenu(
             bitrate = game.prefConfig.showBitrateCard,
             audioHaptics = game.prefConfig.showAudioHapticsCard,
             gyro = game.prefConfig.showGyroCard,
-            shortcuts = game.prefConfig.showQuickKeyCard
+            shortcuts = game.prefConfig.showQuickKeyCard,
+            waveformHaptics = game.prefConfig.showWaveformHapticsCard,
+            hapticVibration = game.prefConfig.showHapticVibrationCard
         )
     }
 
@@ -1402,6 +1420,7 @@ class GameMenu(
                 game.prefConfig,
                 forceInitialFocus = true
             ) {
+                sensaHapticsCardController.setVisible(game.prefConfig.showHapticVibrationCard)
                 composeUiState?.let { state ->
                     state.value = state.value.copy(
                         visibleCards = readVisibleCards(),
