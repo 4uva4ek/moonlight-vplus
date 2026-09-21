@@ -34,6 +34,8 @@ Thumbs.db
 .idea
 #.idea/workspace.xml - remove # and delete .idea if it better suit your needs.
 .gradle
+.gradle-local/
+.deps/
 build/
 *.iml
 
@@ -49,6 +51,8 @@ app/src/main/jni/moonlight-core/build-openssl.sh
 app/google-services.json
 
 # AI analysis docs & dev notes
+/BUILD_WINDOWS_RU.md
+/PR_STICK_CALIBRATION.md
 docs/*
 !docs/DUALSENSE_WIRELESS_BRIDGE_IMPLEMENTATION.md
 !docs/REMOTE_TEXT_FOCUS_DETECTION_IMPLEMENTATION.md
